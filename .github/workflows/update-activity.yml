@@ -1,0 +1,72 @@
+name: Update Activity Data
+
+on:
+  schedule:
+    # 毎日3回実行 (JST: 9:00, 15:00, 21:00)
+    - cron: '0 0,6,12 * * *'
+  workflow_dispatch: # 手動実行を許可
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+jobs:
+  update-activity:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Update activity data
+      env:
+        X_API_BEARER_TOKEN: ${{ secrets.X_API_BEARER_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: node scripts/updateActivity.js
+
+    - name: Check for changes
+      id: git-check
+      run: |
+        git add data/activity.json
+        if git diff --staged --quiet; then
+          echo "changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "changes=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Commit and push changes
+      if: steps.git-check.outputs.changes == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git commit -m "🤖 Auto-update activity data
+
+        🔄 Generated with [AI Social Analytics](https://github.com/sota411/ai-social-analytics)
+        📅 $(date '+%Y-%m-%d %H:%M:%S UTC')
+        🤖 Co-Authored-By: GitHub Actions <noreply@github.com>"
+        git push
+
+    - name: Create summary
+      run: |
+        echo "## 📊 Activity Update Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "- **Changes**: ${{ steps.git-check.outputs.changes }}" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.git-check.outputs.changes }}" == "true" ]; then
+          echo "- **Status**: ✅ Activity data updated successfully" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Status**: ℹ️ No changes detected" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "- **API Sources**: Twitter API v2 + Gemini AI" >> $GITHUB_STEP_SUMMARY
